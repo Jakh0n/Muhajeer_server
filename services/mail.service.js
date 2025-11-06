@@ -8,20 +8,55 @@ const updateTemplate = require('../template/update.template')
 
 class MailService {
 	constructor() {
-		this.transporter = nodemailer.createTransport({
-			host: process.env.SMTP_HOST,
-			port: process.env.SMTP_PORT,
-			secure: false,
-			auth: {
+		// Only create transporter if SMTP is configured
+		if (
+			process.env.SMTP_HOST &&
+			process.env.SMTP_USER &&
+			process.env.SMTP_PASSWORD
+		) {
+			const port = parseInt(process.env.SMTP_PORT) || 587
+			const secure = port === 465
+
+			console.log('📧 Initializing SMTP transporter:', {
+				host: process.env.SMTP_HOST,
+				port: port,
+				secure: secure,
 				user: process.env.SMTP_USER,
-				pass: process.env.SMTP_PASSWORD,
-			},
-		})
+			})
+
+			this.transporter = nodemailer.createTransport({
+				host: process.env.SMTP_HOST,
+				port: port,
+				secure: secure,
+				requireTLS: !secure && port === 587, // Require TLS for port 587
+				auth: {
+					user: process.env.SMTP_USER,
+					pass: process.env.SMTP_PASSWORD,
+				},
+				connectionTimeout: 10000, // 10 seconds
+				greetingTimeout: 10000,
+				socketTimeout: 10000,
+				debug: process.env.NODE_ENV === 'development', // Enable debug in dev
+				logger: false, // Disable verbose logging in production
+			})
+		} else {
+			this.transporter = null
+			console.warn(
+				'⚠️  SMTP is not configured. Email functionality will be disabled.'
+			)
+		}
 	}
 
 	async sendOtpMail(email) {
+		// Check if SMTP is configured
+		if (!this.transporter) {
+			throw new Error(
+				'SMTP configuration is missing. Please set SMTP_HOST, SMTP_USER, and SMTP_PASSWORD environment variables.'
+			)
+		}
+
 		const otp = Math.floor(100000 + Math.random() * 900000) // 6 digit OTP
-		console.log('OTP:', otp)
+		console.log('📧 Sending OTP:', otp, 'to:', email)
 
 		const hashedOtp = await bcrypt.hash(otp.toString(), 10)
 		await otpModel.deleteMany({ email })
@@ -29,16 +64,37 @@ class MailService {
 			email,
 			otp: hashedOtp,
 			expireAt: Date.now() + 5 * 60 * 1000,
-		}) // 1 minutes
-		await this.transporter.sendMail({
-			from: process.env.SMTP_USER,
-			to: email,
-			subject: `OTP for verification ${new Date().toLocaleString()}`,
-			html: otpTemplate(otp),
-		})
+		}) // 5 minutes
+
+		try {
+			console.log('📤 Attempting to send email via SMTP...')
+			const startTime = Date.now()
+
+			await this.transporter.sendMail({
+				from: process.env.SMTP_USER,
+				to: email,
+				subject: `OTP for verification ${new Date().toLocaleString()}`,
+				html: otpTemplate(otp),
+			})
+
+			const duration = Date.now() - startTime
+			console.log(`✅ Email sent successfully in ${duration}ms`)
+		} catch (error) {
+			console.error('❌ Failed to send OTP email:', {
+				message: error.message,
+				code: error.code,
+				command: error.command,
+				response: error.response,
+			})
+			throw new Error(`Failed to send OTP email: ${error.message}`)
+		}
 	}
 
 	async sendSuccessMail({ user, product }) {
+		if (!this.transporter) {
+			console.warn('SMTP not configured, skipping success email')
+			return
+		}
 		await this.transporter.sendMail({
 			from: process.env.SMTP_USER,
 			to: user.email,
@@ -48,6 +104,10 @@ class MailService {
 	}
 
 	async sendCancelMail({ user, product }) {
+		if (!this.transporter) {
+			console.warn('SMTP not configured, skipping cancel email')
+			return
+		}
 		await this.transporter.sendMail({
 			from: process.env.SMTP_USER,
 			to: user.email,
@@ -57,6 +117,10 @@ class MailService {
 	}
 
 	async sendUpdateMail({ user, product, status }) {
+		if (!this.transporter) {
+			console.warn('SMTP not configured, skipping update email')
+			return
+		}
 		await this.transporter.sendMail({
 			from: process.env.SMTP_USER,
 			to: user.email,

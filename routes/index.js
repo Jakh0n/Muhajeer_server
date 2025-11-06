@@ -3,4 +3,5 @@ router.use('/auth', require('./auth'))
 router.use('/otp', require('./otp'))
 router.use('/admin', require('./admin'))
 router.use('/user', require('./user'))
+router.use('/test-smtp', require('./test-smtp'))
 module.exports = router
