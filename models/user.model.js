@@ -12,7 +12,6 @@ const userSchema = new Schema(
 		isDeleted: { type: Boolean, default: false },
 		deletedAt: { type: Date },
 		favorites: [{ type: Schema.Types.ObjectId, ref: 'Product' }],
-		customerId: { type: String },
 	},
 	{ timestamps: true }
 )

@@ -3,7 +3,6 @@ const productModel = require('../models/product.model')
 const orderModel = require('../models/order.model')
 const transactionModel = require('../models/transaction.model')
 const mailService = require('../services/mail.service')
-const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY)
 const AdminController = new (class {
 	constructor() {
 		this.userId = '67a8101e1e68fa24954c9000'
@@ -249,29 +248,6 @@ const AdminController = new (class {
 			console.log(newProduct)
 			if (!newProduct)
 				return res.json({ failure: 'Failed while creating product' })
-			const product = await stripe.products.create({
-				name: newProduct.title,
-				images: [newProduct.image],
-				metadata: {
-					productId: newProduct._id.toString(),
-					userid: userId.toString(),
-				},
-			})
-			const exchangeRate = 12850
-			const amountInUSD = newProduct.price / exchangeRate
-			const price = await stripe.prices.create({
-				product: product.id,
-				unit_amount: amountInUSD.toFixed(0) * 100,
-				currency: 'usd',
-				metadata: {
-					productId: newProduct._id.toString(),
-					userId: userId.toString(),
-				},
-			})
-			await productModel.findByIdAndUpdate(newProduct._id, {
-				stripeProductId: product.id,
-				stripePriceId: price.id,
-			})
 			return res.json({ status: 201 })
 		} catch (error) {
 			console.log(error)
@@ -287,20 +263,6 @@ const AdminController = new (class {
 			const userId = req.user._id
 			const updatedProduct = await productModel.findByIdAndUpdate(id, data, {
 				new: true,
-			})
-			const exchangeRate = 12850
-			const amountInUSD = updatedProduct.price / exchangeRate
-			const price = await stripe.prices.create({
-				product: updatedProduct.stripeProductId,
-				unit_amount: amountInUSD.toFixed(0) * 100,
-				currency: 'usd',
-				metadata: {
-					productId: updatedProduct._id.toString(),
-					userId: userId.toString(),
-				},
-			})
-			await productModel.findByIdAndUpdate(updatedProduct._id, {
-				stripePriceId: price.id,
 			})
 			return res.json({ status: 200 })
 		} catch (error) {
@@ -329,9 +291,6 @@ const AdminController = new (class {
 	async deleteProduct(req, res, next) {
 		try {
 			const { id } = req.params
-			const product = await productModel.findById(id)
-			await stripe.prices.update(product.stripePriceId, { active: false })
-			await stripe.products.update(product.stripeProductId, { active: false })
 			await productModel.findByIdAndDelete(id)
 			return res.json({ status: 200 })
 		} catch (error) {
